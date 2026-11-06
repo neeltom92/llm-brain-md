@@ -52,6 +52,8 @@ That's fine. Nothing important waits for a session to end cleanly, and you never
 
 4. **Background sweep (optional, Claude Code, macOS/Linux).** A launchd job (macOS) or cron job (Linux) runs every 30 minutes, and right after login on macOS. It looks for sessions with unsaved work that have been idle for 30+ minutes, such as a tab left open or a laptop that restarted, even if you never open Claude again. Only then does it start a headless `claude -p` run to save that work. Its tools are limited to reading and editing the brain and reading transcripts. When nothing is pending, it exits without using any tokens. Setup asks before installing it, and its log is `~/.claude-brain/.state/sweep.log`.
 
+The hooks ignore headless `claude -p` runs, so scripts that call `claude -p` never trigger saves or catch-up notes.
+
 To change the autosave interval, edit the hook command in `~/.claude/settings.json`, for example `BRAIN_SAVE_INTERVAL=600 sh "$HOME/.claude/hooks/brain-autosave.sh"`.
 
 To remove the sweep:
@@ -103,6 +105,11 @@ The two reference implementations depend on `npx`, `uv`, `setup.sh`, MCP servers
 - **No encryption at rest.** The only protection is owner-only permissions (`chmod 700`). Put the brain on an encrypted disk if your policy requires it.
 - **No secret scanner.** Redaction depends on Claude's judgment. Run `/brain-lint` regularly.
 - **The sweep sends transcripts to Claude.** It uses the same account and API as your normal sessions. Skip it if your policy forbids unattended runs.
+- **The sweep tries each session once.** After a run that wrote to the brain, it marks each listed session as saved, even one Claude skipped, so it never retries the same session every 30 minutes. Sessions you went back to during the run are left alone. A failed run (for example, not logged in) leaves the sessions for the next try.
 - **Repo learning costs a little.** The first session in each repo with Claude context files, and the first after those files change, does one extra short task. Deleted repo files are not noticed until you say "learn this repo".
 - **No file locking.** Two Claude sessions writing at the same moment can conflict. The schema tells Claude to re-read and merge.
 - **Grep-based search** works up to a few hundred pages. Beyond that, ask Claude to write a small local search script.
+
+## Testing the hooks
+
+Run `sh tests/test-hooks.sh`. It extracts the four hook scripts from the prompt and tests them in a scratch `HOME` with a stub `claude`, so your real `~/.claude` is never touched. It works with macOS `sh`, `dash`, and BusyBox.
