@@ -397,7 +397,8 @@ description: Save unsaved work from earlier Claude Code sessions (closed tabs, c
 Read `~/.claude-brain/BRAIN.md` first. Then, for each session in the "Brain catch-up" note
 (newest first, at most 5):
 1. The transcript is a JSONL file. Read only lines whose `"timestamp"` is after the
-   "unsaved since" time (both are UTC), and only user and assistant text. Skip tool output.
+   "unsaved since" time (both are UTC; "session start" means read the whole session),
+   and only user and assistant text. Skip tool output.
    Transcripts can be large: filter with your search tool and read in chunks. If you can
    start a subagent, give each transcript to one, to keep this session's context small.
 2. Pick out only durable items, as the Remember operation defines them. Skip anything the
@@ -414,7 +415,7 @@ If nothing durable turns up, still do step 4, and say so in one line.
 People rarely end sessions cleanly. They leave tabs open, open new ones, or restart the laptop. Two Claude Code hooks make sure the brain still gets updated:
 
 - **`brain-autosave.sh` (Stop hook)** runs after each Claude reply. If 5+ minutes have passed since this session last saved, it asks Claude to save anything durable to the brain right then, while the conversation is still in context. Idle sessions cost nothing, because the hook only runs after a reply.
-- **`brain-catchup.sh` (SessionStart hook)** runs when a new session starts. It finds sessions from the last 7 days that had activity after their last save (tab closed, crash, reboot) and asks the new session to recover that work from their transcripts with the brain-catchup skill.
+- **`brain-catchup.sh` (SessionStart hook)** runs when a new session starts. It finds sessions from the last 7 days with work that was never saved (tab closed, crash, reboot), including short sessions that ended before their first autosave. It asks the new session to recover that work from their transcripts with the brain-catchup skill, in the same reply as its first answer.
 
 Both scripts use only `sh`, `sed`, `grep`, `find`, `date`, and `stat`. Nothing is installed or downloaded. On Windows, skip this step.
 
@@ -441,8 +442,9 @@ mark() { printf '%s\n' "$transcript" > "$marker"; }   # marker mtime = last save
 if printf '%s' "$input" | grep -q '"stop_hook_active"[[:space:]]*:[[:space:]]*true'; then
   mark; exit 0
 fi
-# First turn of the session: start the clock.
-[ -f "$marker" ] || { mark; exit 0; }
+# First turn of the session: start the clock. "never-saved" tells catch-up
+# that this session has unsaved work even if it ends before the first autosave.
+[ -f "$marker" ] || { printf '%s\nnever-saved\n' "$transcript" > "$marker"; exit 0; }
 
 now=$(date +%s)
 last=$(date -r "$marker" +%s 2>/dev/null || stat -c %Y "$marker")
@@ -474,15 +476,20 @@ for marker in $(find "$STATE" -name '*.saved' -mtime -7 2>/dev/null); do
   [ -f "$t" ] || continue
   tm=$(date -r "$t" +%s 2>/dev/null || stat -c %Y "$t")
   mm=$(date -r "$marker" +%s 2>/dev/null || stat -c %Y "$marker")
-  [ $((tm - mm)) -gt "$GRACE" ] || continue
-  since=$(date -u -r "$marker" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$mm" '+%Y-%m-%dT%H:%M:%SZ')
+  if grep -q '^never-saved$' "$marker"; then
+    since="session start"            # short session, closed before any autosave
+  elif [ $((tm - mm)) -gt "$GRACE" ]; then
+    since=$(date -u -r "$marker" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d "@$mm" '+%Y-%m-%dT%H:%M:%SZ')" (UTC)"
+  else
+    continue
+  fi
   list="$list
-- session $sid, unsaved since $since (UTC): $t"
+- session $sid, unsaved since $since: $t"
   n=$((n + 1))
   [ "$n" -ge 5 ] && break
 done
 [ "$n" -gt 0 ] || exit 0
-printf 'Brain catch-up: %s earlier session(s) have activity that was never saved to ~/.claude-brain (tab closed, crash, or reboot):%s\nAfter you answer my first request, run the brain-catchup skill on these sessions. Keep it brief.\n' "$n" "$list"
+printf 'Brain catch-up: %s earlier session(s) have activity that was never saved to ~/.claude-brain (tab closed, crash, or reboot):%s\nIn the same reply as your answer to my first request, right after the answer, run the brain-catchup skill on these sessions. Keep it brief.\n' "$n" "$list"
 ```
 
 Then merge the following into `~/.claude/settings.json`. Create the file as `{}` if it does not exist. This is JSON, so use no marker comments. Instead:

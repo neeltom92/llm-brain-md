@@ -41,11 +41,11 @@ It also wires the brain into each agent:
 
 ## What if I just close the tab or restart my laptop?
 
-That's fine. Nothing important waits for a session to end cleanly.
+That's fine. Nothing important waits for a session to end cleanly, and you never have to say "remember".
 
 1. **Save right away.** Every agent is told to save decisions, root causes, and corrections the moment they happen. Notes are written to disk immediately, so closing a tab or rebooting loses nothing that was already saved.
 2. **Auto-save hook (Claude Code).** After each Claude reply, a `Stop` hook checks when this session last saved. If it was more than 5 minutes ago, Claude saves anything durable while the conversation is still fresh. A session left open and idle costs nothing, because the hook only runs after a reply.
-3. **Catch-up hook (Claude Code).** When you open a new session, a `SessionStart` hook looks for sessions from the last 7 days with activity after their last save, such as a tab you closed or a laptop that restarted. The new session recovers that work from Claude Code's own transcripts (`~/.claude/projects/`) with `/brain-catchup`.
+3. **Catch-up hook (Claude Code).** When you open a new session, a `SessionStart` hook looks for sessions from the last 7 days with work that was never saved, such as a tab you closed, a laptop that restarted, or a quick one-question session you closed right away. The new session recovers that work from Claude Code's own transcripts (`~/.claude/projects/`) with `/brain-catchup`.
 
 Why not a cron job every 5 minutes? An outside job can't reach into a running session. It would have to start a separate headless `claude -p` run 288 times a day, using tokens and a scheduler your IT may not allow. The hooks only run when there is something new.
 
