@@ -21,7 +21,7 @@ Optional extras:
 - Say "lint my brain" about once a month.
 - Re-paste the prompt when it is updated.
 
-You can run the prompt again safely. It never deletes files. In existing config files, it only changes text between `<!-- BEGIN second-brain -->` and `<!-- END second-brain -->` markers, and it backs up each file before changing it. On a re-run it skips onboarding if your profile exists, adds only what is missing, and writes a log entry.
+You can run the prompt again safely. It never deletes files. In `~/.claude/CLAUDE.md` it only changes text between `<!-- BEGIN second-brain -->` and `<!-- END second-brain -->` markers. It merges `settings.json` without removing your keys, and it replaces its own skills, hooks, and an outdated `BRAIN.md` only after a backup. Every changed file is backed up first. On a re-run it skips onboarding if your profile exists, adds only what is missing, and writes a log entry.
 
 ## What it builds
 
@@ -65,7 +65,7 @@ To remove the sweep:
 Many repos already carry Claude context: `CLAUDE.md`, a personal `CLAUDE.local.md`, and a `.claude/` folder with rules, commands, agents, and skills. Claude Code loads these, but only while you work in that repo. The brain makes them useful everywhere:
 
 - When a session starts at a repo's root folder, the `brain-repo.sh` hook checks whether those files are new to the brain, or changed since it last learned them.
-- If they are, Claude runs `/brain-repo`. It summarizes the repo's purpose, conventions, key commands, gotchas, and custom commands, agents, and skills into `projects/<repo>.md`. Team-wide rules go into `wiki/concepts/`.
+- If they are, Claude runs `/brain-repo`. It summarizes the repo's purpose, conventions, key commands, gotchas, and custom commands, agents, and skills into `projects/<repo>.md`. If a rule looks team-wide, Claude asks before copying it to `wiki/concepts/`.
 - Once a repo is learned, the hook stays quiet until a file changes. You can also say "learn this repo" at any time.
 - It never reads `settings.json` or `settings.local.json`, which can hold secrets. It redacts anything secret-looking in `CLAUDE.local.md`.
 

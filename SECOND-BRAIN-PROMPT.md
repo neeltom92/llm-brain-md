@@ -90,10 +90,10 @@ Fill the `{{placeholders}}` from my Step 1 answers:
 If I skipped a question, leave that section empty.
 
 On a re-run, do not overwrite existing files. These are the exceptions:
-- `log.md`: append a new entry (see its template). If it is missing, create it with only the header lines and the re-run entry.
+- `log.md`: append a re-run entry at the start of Step 7, once you know what changed (see its template). If it is missing, create it with only the header lines and that entry.
 - `me/goals.md`: if it is missing, ask me Step 1 question 4 only, then create it (and any project pages).
 - `index.md`: add only the lines that are missing, each under its section header. If it is missing, create it from the template, then add a line for each existing page.
-- Pages from an older version that lack frontmatter fields (`title`, `type`, `status`, `tags`, `created`, `updated`): add the missing fields. If a page mentions `~/.claude/brain`, change it to `~/.claude-brain`.
+- Pages from an older version that lack frontmatter fields (`title`, `type`, `status`, `tags`, `created`, `updated`): back up the page, then add the missing fields (`status: active`, `tags: []`, today's date for a missing `created` or `updated`; derive `title` and `type` from the file). If a page mentions `~/.claude/brain`, change it to `~/.claude-brain`.
 - `BRAIN.md`: if it is missing, create it, and take `{{NAME}}` from the first `# ` heading in `me/profile.md`. If it exists, fill the template's Owner and Created values from the existing `BRAIN.md` (if it has none, use the profile heading and today's date), then compare. If the existing file still mentions `~/.claude/brain`, back it up to `BRAIN.md.bak-YYYYMMDD-HHMMSS` and replace it without asking. If it differs in any other way, show me the diff, and replace it (after the same backup) only if I approve.
 
 ### `~/.claude-brain/BRAIN.md`
@@ -240,7 +240,7 @@ One line per page. Claude: update this file whenever you create, rename, or arch
 
 ### `~/.claude-brain/log.md`
 
-On a re-run, do not recreate this file. Append `## [{{DATE}}] setup | Re-run`, followed by one line that lists what changed (or "no changes").
+On a re-run, do not recreate this file. At the start of Step 7, append `## [{{DATE}}] setup | Re-run`, followed by one line that lists what changed in Steps 2 to 6 (or "no changes").
 
 ```markdown
 # Brain Log
@@ -336,7 +336,7 @@ That line is a Claude Code import. It loads the profile into every session, in a
 
 ## Step 5: Add skills (slash commands)
 
-Create these six files. If a file already exists with different content, it is from an older version: back it up, then replace it with the version below. Skip files that are already identical. The file content is everything inside each fence. Do not include the fence lines themselves.
+Create these six files with your file-writing tool (not `cp`, which may be aliased to `cp -i` and silently skip). If a file already exists with different content, it is from an older version: back it up, then replace it with the version below. Skip files that are already identical. The file content is everything inside each fence. Do not include the fence lines themselves.
 
 Claude Code shows them as `/brain-ingest`, `/brain-query`, `/brain-remember`, `/brain-lint`, `/brain-catchup`, and `/brain-repo`.
 
@@ -444,7 +444,7 @@ People rarely end sessions cleanly. They leave tabs open, open new ones, or rest
 
 The scripts use only `sh`, `sed`, `grep`, `find`, `date`, `stat`, `touch`, `mv`, `ls`, `dirname`, `basename`, `tr`, `head`, `cat`, and `mkdir`. They skip headless `claude -p` runs, so your own scripts are not affected. Nothing is installed or downloaded. On Windows, skip this step.
 
-Write these three files exactly as shown (content inside the fence only). Then run `chmod +x ~/.claude/hooks/brain-*.sh`. If a file already exists with different content, back it up first, then replace it.
+Write these three files exactly as shown (content inside the fence only), with your file-writing tool, not `cp`. Then run `chmod +x ~/.claude/hooks/brain-*.sh`. If a file already exists with different content, back it up first, then replace it.
 
 `~/.claude/hooks/brain-autosave.sh`:
 ```sh
@@ -666,13 +666,16 @@ Ask me: "Install a background job that saves idle or closed sessions every 30 mi
    </dict>
    </plist>
    ```
-   If the file already exists with different content, copy it to `~/.claude-brain/.state/` first. Never put the backup in `LaunchAgents/`, where it could load as a duplicate job. Then, on every run (first install or re-run), reload the job so it is never left unloaded: `launchctl bootout gui/$(id -u)/local.second-brain.sweep 2>/dev/null; plutil -lint <file> && launchctl bootstrap gui/$(id -u) <file>`. Loading the job runs the sweep once right away (`RunAtLoad`); that is expected, and it exits at once when nothing is pending. `RunAtLoad` also runs it right after each login, which covers restarts.
+   If the file already exists with different content, copy it to `~/.claude-brain/.state/local.second-brain.sweep.plist.bak-YYYYMMDD-HHMMSS` first. Never put the backup in `LaunchAgents/`, where it could load as a duplicate job. Then, on every run (first install or re-run), reload the job so it is never left unloaded: `launchctl bootout gui/$(id -u)/local.second-brain.sweep 2>/dev/null; plutil -lint <file> && launchctl bootstrap gui/$(id -u) <file>`. Loading the job runs the sweep once right away (`RunAtLoad`); that is expected, and it exits at once when nothing is pending. `RunAtLoad` also runs it right after each login, which covers restarts.
 4. **Linux:** if `crontab -l` already contains exactly the line below, skip this step. Otherwise save the current crontab with `crontab -l > ~/.claude-brain/.state/crontab.bak-YYYYMMDD-HHMMSS`. Then replace any old sweep line and add the new one:
    `(crontab -l 2>/dev/null | grep -v second-brain-sweep; echo '*/30 * * * * PATH=CLAUDE_DIR:/usr/bin:/bin sh "$HOME/.claude/hooks/brain-sweep.sh" # second-brain-sweep') | crontab -`
    Replace `CLAUDE_DIR` first.
 5. If my company's device management blocks launchd agents or cron, tell me, and leave it. The hooks still catch up on my next session.
 
 ## Step 7: Verify and report
+
+On a re-run, first append the re-run entry to `log.md` (Step 3).
+
 
 1. Show the tree: `find ~/.claude-brain ~/.claude/skills/brain-* ~/.claude/hooks/brain-* -maxdepth 3 | sort`.
 2. Show the `second-brain` block in `~/.claude/CLAUDE.md` and the path of its backup, if one was made. The file must contain exactly one BEGIN line and one END line. For `settings.json`, show the brain hooks and allow rules.
