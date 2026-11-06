@@ -1,6 +1,6 @@
 # llm-brain-md
 
-A copy-paste prompt that builds a **local, file-only "second brain"** for AI coding agents in `~/.claude/brain`. You need no Obsidian, no plugins, no `npm`, `pip`, or `curl`, and no network. It is built for enterprise machines where installing tools is blocked.
+A copy-paste prompt that builds a **local, file-only "second brain"** for AI coding agents in `~/.claude-brain`. You need no Obsidian, no plugins, no `npm`, `pip`, or `curl`, and no network. It is built for enterprise machines where installing tools is blocked.
 
 ## Use it
 
@@ -14,7 +14,7 @@ You can run the prompt again safely. It never deletes files. In existing config 
 ## What it builds
 
 ```
-~/.claude/brain/
+~/.claude-brain/
 ├── BRAIN.md      # the schema: how agents ingest, query, remember, lint
 ├── index.md      # catalog, one line per page (agents read this to navigate)
 ├── log.md        # append-only history: grep "^## \[" log.md | tail
@@ -24,19 +24,36 @@ You can run the prompt again safely. It never deletes files. In existing config 
 ├── me/           # profile.md, goals.md
 ├── projects/     # one page per project, with dated decisions
 ├── journal/      # session notes
-└── outputs/      # reports
+├── outputs/      # reports
+└── .state/       # auto-save bookkeeping
 ```
 
 It also wires the brain into each agent:
 
 | Agent | How it learns about the brain |
 |---|---|
-| Claude Code | A short pointer block in `~/.claude/CLAUDE.md` that also `@`-imports `me/profile.md`, so every session knows who you are. It also adds the `/brain-ingest`, `/brain-query`, `/brain-remember`, and `/brain-lint` skills in `~/.claude/skills/`. |
+| Claude Code | A short pointer block in `~/.claude/CLAUDE.md` that also `@`-imports `me/profile.md`, so every session knows who you are. It also adds five `/brain-*` skills in `~/.claude/skills/`, plus the auto-save and catch-up hooks (see below). |
 | Cursor | Loads the same skills from `~/.claude/skills/` ([docs](https://cursor.com/docs/context/skills)). You paste the pointer block into Customize > Rules > User Rules. |
 | Codex CLI | The pointer block in `~/.codex/AGENTS.md` (or `AGENTS.override.md` if present), added only if `~/.codex/` already exists. |
 | Gemini CLI | The pointer block in `~/.gemini/GEMINI.md`, added only if `~/.gemini/` already exists. |
 | GitHub Copilot (CLI, VS Code) | The pointer block in `~/.copilot/copilot-instructions.md`, added only if `~/.copilot/` already exists. |
 | Windsurf, Cline, others | The agent prints the pointer block. You paste it into the tool's global instructions. |
+
+## What if I just close the tab or restart my laptop?
+
+That's fine. Nothing important waits for a session to end cleanly.
+
+1. **Save right away.** Every agent is told to save decisions, root causes, and corrections the moment they happen. Notes are written to disk immediately, so closing a tab or rebooting loses nothing that was already saved.
+2. **Auto-save hook (Claude Code).** After each Claude reply, a `Stop` hook checks when this session last saved. If it was more than 5 minutes ago, Claude saves anything durable while the conversation is still fresh. A session left open and idle costs nothing, because the hook only runs after a reply.
+3. **Catch-up hook (Claude Code).** When you open a new session, a `SessionStart` hook looks for sessions from the last 7 days with activity after their last save, such as a tab you closed or a laptop that restarted. The new session recovers that work from Claude Code's own transcripts (`~/.claude/projects/`) with `/brain-catchup`.
+
+Why not a cron job every 5 minutes? An outside job can't reach into a running session. It would have to start a separate headless `claude -p` run 288 times a day, using tokens and a scheduler your IT may not allow. The hooks only run when there is something new.
+
+To change the interval, edit the hook command in `~/.claude/settings.json`, for example `BRAIN_SAVE_INTERVAL=600 sh "$HOME/.claude/hooks/brain-autosave.sh"`.
+
+## Why `~/.claude-brain` and not `~/.claude/brain`?
+
+Claude Code treats everything under `~/.claude/` as a protected path. Every write there triggers a permission prompt, and allow rules can't turn that off. So auto-save would ask you every 5 minutes. A folder next to `~/.claude/`, plus one allow rule in `~/.claude/settings.json`, lets agents save quietly. The pointer, skills, and hooks still live in `~/.claude/`, so every session finds the brain.
 
 ## Why this works (Karpathy's LLM Wiki in one paragraph)
 
@@ -69,5 +86,6 @@ The two reference implementations depend on `npx`, `uv`, `setup.sh`, MCP servers
 
 - **No encryption at rest.** The only protection is owner-only permissions (`chmod 700`). Put the brain on an encrypted disk if your policy requires it.
 - **No secret scanner.** Redaction depends on the agent's judgment. Run `/brain-lint` regularly.
+- **Hooks are Claude Code only.** Codex, Gemini, Copilot, and Cursor rely on the "save right away" rule instead.
 - **No file locking.** Two agents writing at the same moment can conflict. The schema tells agents to re-read and merge.
 - **Grep-based search** works up to a few hundred pages. Beyond that, ask your agent to write a small local search script.
