@@ -7,7 +7,19 @@ A copy-paste prompt that builds a **local, file-only "second brain"** for Claude
 1. Open [`SECOND-BRAIN-PROMPT.md`](SECOND-BRAIN-PROMPT.md) and copy the whole file. On GitHub, use the **Raw** view.
 2. Paste it into Claude Code (terminal or IDE extension).
 3. Answer the six onboarding questions. You can skip any of them.
-4. Open a **new** Claude Code session in any folder and ask: *"What do you know about me?"*
+4. Approve the permission prompts. Claude Code always asks before writing into `~/.claude/` (the `CLAUDE.md` pointer, skills, hooks, and `settings.json`), even during setup.
+5. Choose whether to install the 30-minute background sweep (macOS/Linux).
+6. Open a **new** Claude Code session in any folder and ask: *"What do you know about me?"* Sessions that were already open do not pick up the brain or the hooks.
+
+After that, there is nothing to do day to day:
+- Claude saves decisions and fixes as they happen, and auto-saves after 30 active minutes.
+- The next session, or the background sweep, recovers work from closed tabs and restarts.
+- Repos with `CLAUDE.md` or `.claude/` are learned when you start Claude in the repo's root folder.
+
+Optional extras:
+- Say "remember …" for anything you want kept for sure.
+- Say "lint my brain" about once a month.
+- Re-paste the prompt when it is updated.
 
 You can run the prompt again safely. It never deletes files. In existing config files, it only changes text between `<!-- BEGIN second-brain -->` and `<!-- END second-brain -->` markers, and it backs up each file before changing it. On a re-run it skips onboarding if your profile exists, adds only what is missing, and writes a log entry.
 
