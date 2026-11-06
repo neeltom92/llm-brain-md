@@ -44,16 +44,20 @@ It also wires the brain into each agent:
 That's fine. Nothing important waits for a session to end cleanly, and you never have to say "remember".
 
 1. **Save right away.** Every agent is told to save decisions, root causes, and corrections the moment they happen. Notes are written to disk immediately, so closing a tab or rebooting loses nothing that was already saved.
-2. **Auto-save hook (Claude Code).** After each Claude reply, a `Stop` hook checks when this session last saved. If it was more than 5 minutes ago, Claude saves anything durable while the conversation is still fresh. A session left open and idle costs nothing, because the hook only runs after a reply.
+2. **Auto-save hook (Claude Code).** After each Claude reply, a `Stop` hook checks when this session last saved. If it was more than 30 minutes ago, Claude saves anything durable while the conversation is still fresh. A session left open and idle costs nothing, because the hook only runs after a reply.
 3. **Catch-up hook (Claude Code).** When you open a new session, a `SessionStart` hook looks for sessions from the last 7 days with work that was never saved, such as a tab you closed, a laptop that restarted, or a quick one-question session you closed right away. The new session recovers that work from Claude Code's own transcripts (`~/.claude/projects/`) with `/brain-catchup`.
 
-Why not a cron job every 5 minutes? An outside job can't reach into a running session. It would have to start a separate headless `claude -p` run 288 times a day, using tokens and a scheduler your IT may not allow. The hooks only run when there is something new.
+4. **Background sweep (optional, Claude Code, macOS/Linux).** A launchd job (macOS) or cron job (Linux) runs every 30 minutes, and right after login on macOS. It looks for sessions with unsaved work that have been idle for 30+ minutes, such as a tab left open or a laptop that restarted, even if you never open Claude again. Only then does it start a headless `claude -p` run to save that work. Its tools are limited to reading and editing the brain and reading transcripts. When nothing is pending, it exits without using any tokens. Setup asks before installing it, and its log is `~/.claude-brain/.state/sweep.log`.
 
-To change the interval, edit the hook command in `~/.claude/settings.json`, for example `BRAIN_SAVE_INTERVAL=600 sh "$HOME/.claude/hooks/brain-autosave.sh"`.
+To change the autosave interval, edit the hook command in `~/.claude/settings.json`, for example `BRAIN_SAVE_INTERVAL=600 sh "$HOME/.claude/hooks/brain-autosave.sh"`.
+
+To remove the sweep:
+- macOS: `launchctl bootout gui/$(id -u)/local.second-brain.sweep && rm ~/Library/LaunchAgents/local.second-brain.sweep.plist`
+- Linux: `crontab -l | grep -v second-brain-sweep | crontab -`
 
 ## Why `~/.claude-brain` and not `~/.claude/brain`?
 
-Claude Code treats everything under `~/.claude/` as a protected path. Every write there triggers a permission prompt, and allow rules can't turn that off. So auto-save would ask you every 5 minutes. A folder next to `~/.claude/`, plus one allow rule in `~/.claude/settings.json`, lets agents save quietly. The pointer, skills, and hooks still live in `~/.claude/`, so every session finds the brain.
+Claude Code treats everything under `~/.claude/` as a protected path. Every write there triggers a permission prompt, and allow rules can't turn that off. So auto-save would keep asking you. A folder next to `~/.claude/`, plus allow rules in `~/.claude/settings.json`, lets agents save quietly. The pointer, skills, and hooks still live in `~/.claude/`, so every session finds the brain.
 
 ## Why this works (Karpathy's LLM Wiki in one paragraph)
 
@@ -86,6 +90,7 @@ The two reference implementations depend on `npx`, `uv`, `setup.sh`, MCP servers
 
 - **No encryption at rest.** The only protection is owner-only permissions (`chmod 700`). Put the brain on an encrypted disk if your policy requires it.
 - **No secret scanner.** Redaction depends on the agent's judgment. Run `/brain-lint` regularly.
+- **The sweep sends transcripts to Claude.** It uses the same account and API as your normal sessions. Skip it if your policy forbids unattended runs.
 - **Hooks are Claude Code only.** Codex, Gemini, Copilot, and Cursor rely on the "save right away" rule instead.
 - **No file locking.** Two agents writing at the same moment can conflict. The schema tells agents to re-read and merge.
 - **Grep-based search** works up to a few hundred pages. Beyond that, ask your agent to write a small local search script.

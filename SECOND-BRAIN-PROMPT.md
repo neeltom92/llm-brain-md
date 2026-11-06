@@ -16,7 +16,7 @@ Read this whole prompt before doing anything. Then follow the steps in order.
 
 ## Hard constraints (never violate)
 
-1. **Offline only.** Do NOT download, install, or fetch anything. That means no npm, pip, brew, apt, cargo, or uv. No curl or wget. No `git clone`. No MCP servers, browser extensions, Obsidian, or web requests. Use only your built-in file tools and basic commands already on the OS (for example `mkdir`, `ls`, `cat`, `cp`, `mv`, `grep`, `find`, `sort`, `sed`, `date`, `touch`, `chmod`). The commands in this prompt are for macOS/Linux. On Windows, use the PowerShell equivalents (for example `Select-String -Recurse` instead of `grep`) and skip `chmod`.
+1. **Offline only.** Do NOT download, install, or fetch anything. That means no npm, pip, brew, apt, cargo, or uv. No curl or wget. No `git clone`. No MCP servers, browser extensions, Obsidian, or web requests. Use only your built-in file tools and basic commands already on the OS (for example `mkdir`, `ls`, `cat`, `cp`, `mv`, `grep`, `find`, `sort`, `sed`, `date`, `touch`, `chmod`, and, for the optional background sweep, `launchctl` or `crontab`). The commands in this prompt are for macOS/Linux. On Windows, use the PowerShell equivalents (for example `Select-String -Recurse` instead of `grep`) and skip `chmod`.
 2. **Never delete my files, and never change content you did not create.** There are three exceptions. (a) You may replace the contents of your own marked block (see constraint 3). (b) You may replace `BRAIN.md` after I approve. (c) Files from an older version of this setup (anything that still mentions `~/.claude/brain`) may be upgraded as the steps below describe. Before you change an existing file outside `~/.claude-brain` (for example an agent config file), copy it to `<file>.bak-YYYYMMDD-HHMMSS`. If a change would leave a file identical, do not touch the file and do not back it up.
 3. **Use marked blocks for shared config files.** Put every change to a shared config file inside one block. The block starts with a line `<!-- BEGIN second-brain -->` and ends with a line `<!-- END second-brain -->`, each on its own line. If the block already exists, replace only what is inside it. This makes the setup safe to re-run.
 4. **Local only.** Do not add git remotes, push, sync, or upload anything.
@@ -410,11 +410,11 @@ Read `~/.claude-brain/BRAIN.md` first. Then, for each session in the "Brain catc
 If nothing durable turns up, still do step 4, and say so in one line.
 ```
 
-## Step 6: Auto-save hooks (Claude Code, macOS/Linux)
+## Step 6: Auto-save hooks and background sweep (Claude Code, macOS/Linux)
 
 People rarely end sessions cleanly. They leave tabs open, open new ones, or restart the laptop. Two Claude Code hooks make sure the brain still gets updated:
 
-- **`brain-autosave.sh` (Stop hook)** runs after each Claude reply. If 5+ minutes have passed since this session last saved, it asks Claude to save anything durable to the brain right then, while the conversation is still in context. Idle sessions cost nothing, because the hook only runs after a reply.
+- **`brain-autosave.sh` (Stop hook)** runs after each Claude reply. If 30+ minutes have passed since this session last saved, it asks Claude to save anything durable to the brain right then, while the conversation is still in context. Idle sessions cost nothing, because the hook only runs after a reply.
 - **`brain-catchup.sh` (SessionStart hook)** runs when a new session starts. It finds sessions from the last 7 days with work that was never saved (tab closed, crash, reboot), including short sessions that ended before their first autosave. It asks the new session to recover that work from their transcripts with the brain-catchup skill, in the same reply as its first answer.
 
 Both scripts use only `sh`, `sed`, `grep`, `find`, `date`, and `stat`. Nothing is installed or downloaded. On Windows, skip this step.
@@ -425,10 +425,11 @@ Write these two files exactly as shown (content inside the fence only). Then run
 ```sh
 #!/bin/sh
 # Second brain autosave: Claude Code Stop hook.
-# After a turn ends, if this session has been active for 5+ minutes since its
+# After a turn ends, if this session has been active for 30+ minutes since its
 # last brain save, ask Claude to save durable knowledge before it stops.
 # Idle sessions cost nothing: Stop only fires after a turn.
-INTERVAL="${BRAIN_SAVE_INTERVAL:-300}"   # seconds; override in the hook command in settings.json
+[ -n "$BRAIN_SWEEP" ] && exit 0          # the background sweep's own session
+INTERVAL="${BRAIN_SAVE_INTERVAL:-1800}"   # seconds; override in the hook command in settings.json
 STATE="$HOME/.claude-brain/.state"
 input=$(cat)
 sid=$(printf '%s' "$input" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
@@ -462,8 +463,11 @@ JSON
 # Second brain catch-up: Claude Code SessionStart hook.
 # Finds sessions from the last 7 days with activity after their last brain save
 # (tab closed, shell killed, laptop rebooted) and asks the new session to catch up.
+[ -n "$BRAIN_SWEEP" ] && exit 0          # the background sweep's own session
 STATE="$HOME/.claude-brain/.state"
 GRACE=120   # seconds of trailing activity to ignore
+MIN_IDLE="${BRAIN_MIN_IDLE:-0}"   # the sweep sets this: skip sessions still in use
+now=$(date +%s)
 [ -d "$STATE" ] || exit 0
 cur=$(sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
 list=""
@@ -475,6 +479,7 @@ for marker in $(find "$STATE" -name '*.saved' -mtime -7 2>/dev/null); do
   t=$(head -n 1 "$marker")
   [ -f "$t" ] || continue
   tm=$(date -r "$t" +%s 2>/dev/null || stat -c %Y "$t")
+  [ $((now - tm)) -ge "$MIN_IDLE" ] || continue
   mm=$(date -r "$marker" +%s 2>/dev/null || stat -c %Y "$marker")
   if grep -q '^never-saved$' "$marker"; then
     since="session start"            # short session, closed before any autosave
@@ -495,7 +500,7 @@ printf 'Brain catch-up: %s earlier session(s) have activity that was never saved
 Then merge the following into `~/.claude/settings.json`. Create the file as `{}` if it does not exist. This is JSON, so use no marker comments. Instead:
 - If you will change the file, back it up first (constraint 2).
 - Keep every existing key, rule, and hook.
-- Add each `allow` rule only if it is missing.
+- Add each `allow` rule only if it is missing. If `Write(~/.claude-brain/**)` is there from an older version, remove it: Claude Code ignores `Write(...)` rules, and `Edit(...)` rules already cover writes.
 - Add each hook group only if no existing hook command already contains `brain-autosave.sh` (for Stop) or `brain-catchup.sh` (for SessionStart).
 
 ```json
@@ -504,7 +509,6 @@ Then merge the following into `~/.claude/settings.json`. Create the file as `{}`
     "allow": [
       "Read(~/.claude-brain/**)",
       "Edit(~/.claude-brain/**)",
-      "Write(~/.claude-brain/**)",
       "Read(~/.claude/projects/**)"
     ]
   },
@@ -521,6 +525,67 @@ Then merge the following into `~/.claude/settings.json`. Create the file as `{}`
 
 The allow rules let Claude read and write the brain, and read old session transcripts for catch-up, without asking each time. They cover nothing else. Afterwards, check that the file is still valid JSON: run `python3 -m json.tool ~/.claude/settings.json` if Python is available, or else re-read the file carefully.
 
+### Background sweep (optional)
+
+The hooks need some activity: a reply in a session, or a new session starting. The sweep also covers tabs left idle and laptops that restart while you never open Claude again. Every 30 minutes, it checks for sessions that have unsaved work and have been idle for 30+ minutes. Only then does it start a headless `claude -p` run that saves their work to the brain. When nothing is pending, it exits without using any tokens.
+
+Ask me: "Install a background job that saves idle or closed sessions every 30 minutes? It only runs Claude when a session has unsaved work, and it uses the same Claude account and network access as your normal sessions." If I say no, skip this part.
+
+1. Write `~/.claude/hooks/brain-sweep.sh` (content inside the fence only), then run `chmod +x` on it:
+   ```sh
+   #!/bin/sh
+   # Second brain sweep: background job that runs every 30 minutes (launchd or cron).
+   # Saves sessions that were left open and idle, closed, or lost to a reboot,
+   # without waiting for you to open a new session. It starts Claude only when a
+   # session has unsaved work and has been idle for 30+ minutes; otherwise it exits
+   # without using any tokens.
+   STATE="$HOME/.claude-brain/.state"
+   [ -d "$STATE" ] || exit 0
+   command -v claude >/dev/null 2>&1 || exit 0
+   lock="$STATE/sweep.lock"
+   # One sweep at a time. A lock older than 60 minutes is stale (a hung run).
+   if ! mkdir "$lock" 2>/dev/null; then
+     [ -n "$(find "$lock" -maxdepth 0 -mmin +60 2>/dev/null)" ] || exit 0
+     rmdir "$lock" 2>/dev/null; mkdir "$lock" 2>/dev/null || exit 0
+   fi
+   trap 'rmdir "$lock" 2>/dev/null' EXIT INT TERM
+   note=$(printf '{"session_id":"sweep"}' | BRAIN_MIN_IDLE="${BRAIN_MIN_IDLE:-1800}" sh "$HOME/.claude/hooks/brain-catchup.sh")
+   [ -n "$note" ] || exit 0
+   log="$STATE/sweep.log"
+   echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') sweep: $(printf '%s\n' "$note" | grep -c '^- session') session(s)" >> "$log"
+   cd "$HOME/.claude-brain" || exit 0
+   BRAIN_SWEEP=1 claude -p \
+     --allowedTools "Read(~/.claude-brain/**)" "Edit(~/.claude-brain/**)" \
+                    "Read(~/.claude/projects/**)" "Read(~/.claude/skills/brain-catchup/**)" "Grep" "Glob" \
+     -- "$note
+   This is an automatic background sweep. Nobody is waiting for an answer. Read ~/.claude/skills/brain-catchup/SKILL.md and follow it now for the sessions above. Reply with one line saying what you saved." \
+     < /dev/null >> "$log" 2>&1
+   tail -n 200 "$log" > "$log.tmp" && mv "$log.tmp" "$log"   # keep the log small
+   ```
+2. Find the `claude` command: `command -v claude`. Call its folder `CLAUDE_DIR` (for example `/opt/homebrew/bin`). If it is not found, tell me and skip the rest of this part.
+3. **macOS:** write `~/Library/LaunchAgents/local.second-brain.sweep.plist`. Replace `HOME_DIR` and `CLAUDE_DIR` with absolute paths, because launchd does not expand `~` or `$HOME`:
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+     <key>Label</key><string>local.second-brain.sweep</string>
+     <key>ProgramArguments</key>
+     <array><string>/bin/sh</string><string>HOME_DIR/.claude/hooks/brain-sweep.sh</string></array>
+     <key>StartInterval</key><integer>1800</integer>
+     <key>RunAtLoad</key><true/>
+     <key>EnvironmentVariables</key>
+     <dict><key>PATH</key><string>CLAUDE_DIR:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+     <key>StandardErrorPath</key><string>HOME_DIR/.claude-brain/.state/sweep.err</string>
+   </dict>
+   </plist>
+   ```
+   If the file already exists with different content, copy it to `~/.claude-brain/.state/` first. Never put the backup in `LaunchAgents/`, where it could load as a duplicate job. Then run `launchctl bootout gui/$(id -u)/local.second-brain.sweep 2>/dev/null`. Load the job: `plutil -lint <file> && launchctl bootstrap gui/$(id -u) <file>`. `RunAtLoad` also runs it right after each login, which covers restarts.
+4. **Linux:** save the current crontab to `~/.claude-brain/.state/crontab.bak` with `crontab -l`. Then replace any old sweep line and add the new one:
+   `(crontab -l 2>/dev/null | grep -v second-brain-sweep; echo '*/30 * * * * PATH=CLAUDE_DIR:/usr/bin:/bin sh "$HOME/.claude/hooks/brain-sweep.sh" # second-brain-sweep') | crontab -`
+   Replace `CLAUDE_DIR` first.
+5. If my company's device management blocks launchd agents or cron, tell me, and leave it. The hooks still catch up on my next session.
+
 Other agents (Codex, Gemini, Copilot, Cursor) do not get these hooks. For them, the "save right away" rule in the pointer block does the job.
 
 ## Step 7: Verify and report
@@ -532,6 +597,7 @@ Other agents (Codex, Gemini, Copilot, Cursor) do not get these hooks. For them, 
    - Run the same command again. This time it prints a line with `"decision":"block"`.
    - `printf '{"session_id":"x"}' | sh ~/.claude/hooks/brain-catchup.sh` prints nothing on a fresh install.
    - Then remove the test marker: `rm -f ~/.claude-brain/.state/selftest.saved`.
+   - If the sweep was installed: `sh ~/.claude/hooks/brain-sweep.sh` exits at once with nothing pending. On macOS, `launchctl print gui/$(id -u)/local.second-brain.sweep | grep 'run interval'` shows `1800 seconds`. On Linux, `crontab -l | grep second-brain-sweep` shows the line.
 4. Confirm that you did not download, install, or contact the network.
 5. List anything I must do by hand, for example pasting the pointer block into Cursor.
 6. Warn me about agent sandboxes. Some agents only allow file access inside the current project folder. If such an agent cannot read or write `~/.claude-brain` from another folder, I need to allow that directory in the agent's settings.
@@ -543,8 +609,9 @@ Test:      Open a NEW terminal or IDE session in any folder and ask
 Ingest:    Save a file into ~/.claude-brain/inbox/ (or paste text), then say "process my inbox".
 Ask:       "What do I know about <topic>?"
 Remember:  "Remember that <fact or decision>." or "Save this session."
-Auto-save: Claude Code saves on its own every 5+ active minutes, and new sessions recover
-           work from tabs you closed or lost to a reboot. No need to exit cleanly.
+Auto-save: Claude Code saves on its own every 30 active minutes. New sessions, and the 30-minute
+           background sweep if installed, recover work from idle or closed tabs and reboots.
+           No need to exit cleanly or say "remember".
 Maintain:  "Lint my brain." (about once a month)
 Browse:    Open ~/.claude-brain in any editor. The links are plain markdown.
 ```
