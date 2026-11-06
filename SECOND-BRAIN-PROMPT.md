@@ -92,8 +92,9 @@ Fill the `{{placeholders}}` from my Step 1 answers:
 
 If I skipped a question, leave that section empty.
 
-On a re-run, do not overwrite existing files. There are three exceptions:
-- `log.md`: append a new entry (see its template).
+On a re-run, do not overwrite existing files. These are the exceptions:
+- `log.md`: append a new entry (see its template). If it is missing, create it from the template first.
+- `me/goals.md`: if it is missing, ask me Step 1 question 4 only, then create it (and any project pages).
 - `index.md`: add only the lines that are missing, each under its section header.
 - Pages from an older version that lack required frontmatter fields: add the missing fields.
 - `BRAIN.md`: if it is missing, create it, and take `{{NAME}}` from the first `# ` heading in `me/profile.md`. If it exists, fill the template's Owner and Created values from the existing `BRAIN.md`, then compare. If it differs, show me the diff. Replace it only if I approve, and back it up first to `BRAIN.md.bak-YYYYMMDD-HHMMSS`.
@@ -523,7 +524,7 @@ Then merge the following into `~/.claude/settings.json`. Create the file as `{}`
 }
 ```
 
-The allow rules let Claude read and write the brain, and read old session transcripts for catch-up, without asking each time. They cover nothing else. Afterwards, check that the file is still valid JSON: run `python3 -m json.tool ~/.claude/settings.json` if Python is available, or else re-read the file carefully.
+The allow rules let Claude read and write the brain, and read old session transcripts for catch-up, without asking each time. They cover nothing else. Afterwards, check that the file is still valid JSON: run `python3 -m json.tool ~/.claude/settings.json` only if Python is already set up. Never accept a prompt to install developer tools. Otherwise re-read the file carefully.
 
 ### Background sweep (optional)
 
@@ -562,7 +563,7 @@ Ask me: "Install a background job that saves idle or closed sessions every 30 mi
      < /dev/null >> "$log" 2>&1
    tail -n 200 "$log" > "$log.tmp" && mv "$log.tmp" "$log"   # keep the log small
    ```
-2. Find the `claude` command: `command -v claude`. Call its folder `CLAUDE_DIR` (for example `/opt/homebrew/bin`). If it is not found, tell me and skip the rest of this part.
+2. If `~/.claude/hooks/brain-sweep.sh` already exists with different content, back it up first. Then find the `claude` command: `command -v claude`. Call its folder `CLAUDE_DIR` (for example `/opt/homebrew/bin`). If it is not found, tell me and skip the rest of this part.
 3. **macOS:** write `~/Library/LaunchAgents/local.second-brain.sweep.plist`. Replace `HOME_DIR` and `CLAUDE_DIR` with absolute paths, because launchd does not expand `~` or `$HOME`:
    ```xml
    <?xml version="1.0" encoding="UTF-8"?>
@@ -580,8 +581,8 @@ Ask me: "Install a background job that saves idle or closed sessions every 30 mi
    </dict>
    </plist>
    ```
-   If the file already exists with different content, copy it to `~/.claude-brain/.state/` first. Never put the backup in `LaunchAgents/`, where it could load as a duplicate job. Then run `launchctl bootout gui/$(id -u)/local.second-brain.sweep 2>/dev/null`. Load the job: `plutil -lint <file> && launchctl bootstrap gui/$(id -u) <file>`. `RunAtLoad` also runs it right after each login, which covers restarts.
-4. **Linux:** save the current crontab to `~/.claude-brain/.state/crontab.bak` with `crontab -l`. Then replace any old sweep line and add the new one:
+   If the file already exists with different content, copy it to `~/.claude-brain/.state/` first. Never put the backup in `LaunchAgents/`, where it could load as a duplicate job. Then, on every run (first install or re-run), reload the job so it is never left unloaded: `launchctl bootout gui/$(id -u)/local.second-brain.sweep 2>/dev/null; plutil -lint <file> && launchctl bootstrap gui/$(id -u) <file>`. `RunAtLoad` also runs it right after each login, which covers restarts.
+4. **Linux:** if `crontab -l` already contains exactly the line below, skip this step. Otherwise save the current crontab with `crontab -l > ~/.claude-brain/.state/crontab.bak-YYYYMMDD-HHMMSS`. Then replace any old sweep line and add the new one:
    `(crontab -l 2>/dev/null | grep -v second-brain-sweep; echo '*/30 * * * * PATH=CLAUDE_DIR:/usr/bin:/bin sh "$HOME/.claude/hooks/brain-sweep.sh" # second-brain-sweep') | crontab -`
    Replace `CLAUDE_DIR` first.
 5. If my company's device management blocks launchd agents or cron, tell me, and leave it. The hooks still catch up on my next session.
@@ -591,13 +592,13 @@ Other agents (Codex, Gemini, Copilot, Cursor) do not get these hooks. For them, 
 ## Step 7: Verify and report
 
 1. Show the tree: `find ~/.claude-brain ~/.claude/skills/brain-* ~/.claude/hooks/brain-* -maxdepth 3 | sort`.
-2. For each config file you edited, show its `second-brain` block and the path of its backup. Each file must contain exactly one BEGIN line and one END line.
+2. For each pointer file you edited, show its `second-brain` block and the path of its backup, if one was made. Each file must contain exactly one BEGIN line and one END line. For `settings.json`, show the brain hooks and allow rules.
 3. Test the hooks with fake input (macOS/Linux):
    - `printf '{"session_id":"selftest","transcript_path":"/dev/null","stop_hook_active":false}' | BRAIN_SAVE_INTERVAL=0 sh ~/.claude/hooks/brain-autosave.sh` prints nothing the first time.
    - Run the same command again. This time it prints a line with `"decision":"block"`.
    - `printf '{"session_id":"x"}' | sh ~/.claude/hooks/brain-catchup.sh` prints nothing on a fresh install.
    - Then remove the test marker: `rm -f ~/.claude-brain/.state/selftest.saved`.
-   - If the sweep was installed: `sh ~/.claude/hooks/brain-sweep.sh` exits at once with nothing pending. On macOS, `launchctl print gui/$(id -u)/local.second-brain.sweep | grep 'run interval'` shows `1800 seconds`. On Linux, `crontab -l | grep second-brain-sweep` shows the line.
+   - If the sweep was installed: `sh -n ~/.claude/hooks/brain-sweep.sh` reports no syntax errors. Do not run the sweep itself, because it may start a real Claude run. On macOS, `launchctl print gui/$(id -u)/local.second-brain.sweep | grep 'run interval'` shows `1800 seconds`. On Linux, `crontab -l | grep second-brain-sweep` shows the line.
 4. Confirm that you did not download, install, or contact the network.
 5. List anything I must do by hand, for example pasting the pointer block into Cursor.
 6. Warn me about agent sandboxes. Some agents only allow file access inside the current project folder. If such an agent cannot read or write `~/.claude-brain` from another folder, I need to allow that directory in the agent's settings.
