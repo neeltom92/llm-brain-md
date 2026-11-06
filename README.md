@@ -1,13 +1,13 @@
 # llm-brain-md
 
-A copy-paste prompt that builds a **local, file-only "second brain"** for AI coding agents in `~/.claude-brain`. You need no Obsidian, no plugins, no `npm`, `pip`, or `curl`, and no network. It is built for enterprise machines where installing tools is blocked.
+A copy-paste prompt that builds a **local, file-only "second brain"** for Claude Code in `~/.claude-brain`. You need no Obsidian, no plugins, no `npm`, `pip`, or `curl`, and no network. It is built for enterprise machines where installing tools is blocked.
 
 ## Use it
 
 1. Open [`SECOND-BRAIN-PROMPT.md`](SECOND-BRAIN-PROMPT.md) and copy the whole file. On GitHub, use the **Raw** view.
-2. Paste it into Claude Code, or any agent that can read and write files: Codex CLI, Gemini CLI, Cursor, Copilot agent mode.
+2. Paste it into Claude Code (terminal or IDE extension).
 3. Answer the six onboarding questions. You can skip any of them.
-4. Open a **new** session in any folder and ask: *"What do you know about me?"*
+4. Open a **new** Claude Code session in any folder and ask: *"What do you know about me?"*
 
 You can run the prompt again safely. It never deletes files. In existing config files, it only changes text between `<!-- BEGIN second-brain -->` and `<!-- END second-brain -->` markers, and it backs up each file before changing it. On a re-run it skips onboarding if your profile exists, adds only what is missing, and writes a log entry.
 
@@ -15,12 +15,12 @@ You can run the prompt again safely. It never deletes files. In existing config 
 
 ```
 ~/.claude-brain/
-├── BRAIN.md      # the schema: how agents ingest, query, remember, lint
-├── index.md      # catalog, one line per page (agents read this to navigate)
+├── BRAIN.md      # the schema: how Claude ingests, queries, remembers, lints
+├── index.md      # catalog, one line per page (Claude reads this to navigate)
 ├── log.md        # append-only history: grep "^## \[" log.md | tail
 ├── inbox/        # drop anything here
 ├── raw/          # immutable source copies (any file type)
-├── wiki/         # sources/ entities/ concepts/ synthesis/ (the agent writes these)
+├── wiki/         # sources/ entities/ concepts/ synthesis/ (Claude writes these)
 ├── me/           # profile.md, goals.md
 ├── projects/     # one page per project, with dated decisions
 ├── journal/      # session notes
@@ -28,22 +28,13 @@ You can run the prompt again safely. It never deletes files. In existing config 
 └── .state/       # auto-save bookkeeping
 ```
 
-It also wires the brain into each agent:
-
-| Agent | How it learns about the brain |
-|---|---|
-| Claude Code | A short pointer block in `~/.claude/CLAUDE.md` that also `@`-imports `me/profile.md`, so every session knows who you are. It also adds five `/brain-*` skills in `~/.claude/skills/`, plus the auto-save and catch-up hooks (see below). |
-| Cursor | Loads the same skills from `~/.claude/skills/` ([docs](https://cursor.com/docs/context/skills)). You paste the pointer block into Customize > Rules > User Rules. |
-| Codex CLI | The pointer block in `~/.codex/AGENTS.md` (or `AGENTS.override.md` if present), added only if `~/.codex/` already exists. |
-| Gemini CLI | The pointer block in `~/.gemini/GEMINI.md`, added only if `~/.gemini/` already exists. |
-| GitHub Copilot (CLI, VS Code) | The pointer block in `~/.copilot/copilot-instructions.md`, added only if `~/.copilot/` already exists. |
-| Windsurf, Cline, others | The agent prints the pointer block. You paste it into the tool's global instructions. |
+It also wires the brain into Claude Code: a short pointer block in `~/.claude/CLAUDE.md` that also `@`-imports `me/profile.md`, so every session knows who you are. It adds six `/brain-*` skills in `~/.claude/skills/`, plus the auto-save, catch-up, and repo-context hooks (see below).
 
 ## What if I just close the tab or restart my laptop?
 
 That's fine. Nothing important waits for a session to end cleanly, and you never have to say "remember".
 
-1. **Save right away.** Every agent is told to save decisions, root causes, and corrections the moment they happen. Notes are written to disk immediately, so closing a tab or rebooting loses nothing that was already saved.
+1. **Save right away.** Claude is told to save decisions, root causes, and corrections the moment they happen. Notes are written to disk immediately, so closing a tab or rebooting loses nothing that was already saved.
 2. **Auto-save hook (Claude Code).** After each Claude reply, a `Stop` hook checks when this session last saved. If it was more than 30 minutes ago, Claude saves anything durable while the conversation is still fresh. A session left open and idle costs nothing, because the hook only runs after a reply.
 3. **Catch-up hook (Claude Code).** When you open a new session, a `SessionStart` hook looks for sessions from the last 7 days with work that was never saved, such as a tab you closed, a laptop that restarted, or a quick one-question session you closed right away. The new session recovers that work from Claude Code's own transcripts (`~/.claude/projects/`) with `/brain-catchup`.
 
@@ -55,9 +46,20 @@ To remove the sweep:
 - macOS: `launchctl bootout gui/$(id -u)/local.second-brain.sweep && rm ~/Library/LaunchAgents/local.second-brain.sweep.plist`
 - Linux: `crontab -l | grep -v second-brain-sweep | crontab -`
 
+## Repos that already have `CLAUDE.md` or `.claude/`
+
+Many repos already carry Claude context: `CLAUDE.md`, a personal `CLAUDE.local.md`, and a `.claude/` folder with rules, commands, agents, and skills. Claude Code loads these, but only while you work in that repo. The brain makes them useful everywhere:
+
+- When a session starts at a repo's root folder, the `brain-repo.sh` hook checks whether those files are new to the brain, or changed since it last learned them.
+- If they are, Claude runs `/brain-repo`. It summarizes the repo's purpose, conventions, key commands, gotchas, and custom commands, agents, and skills into `projects/<repo>.md`. Team-wide rules go into `wiki/concepts/`.
+- Once a repo is learned, the hook stays quiet until a file changes. You can also say "learn this repo" at any time.
+- It never reads `settings.json` or `settings.local.json`, which can hold secrets. It redacts anything secret-looking in `CLAUDE.local.md`.
+
+Example: you open Claude in `payments-infra`, and it already knows that your `terraform-aws-ec2` repo requires IMDSv2 and forbids a local `terraform apply`.
+
 ## Why `~/.claude-brain` and not `~/.claude/brain`?
 
-Claude Code treats everything under `~/.claude/` as a protected path. Every write there triggers a permission prompt, and allow rules can't turn that off. So auto-save would keep asking you. A folder next to `~/.claude/`, plus allow rules in `~/.claude/settings.json`, lets agents save quietly. The pointer, skills, and hooks still live in `~/.claude/`, so every session finds the brain.
+Claude Code treats everything under `~/.claude/` as a protected path. Every write there triggers a permission prompt, and allow rules can't turn that off. So auto-save would keep asking you. A folder next to `~/.claude/`, plus allow rules in `~/.claude/settings.json`, lets Claude save quietly. The pointer, skills, and hooks still live in `~/.claude/`, so every session finds the brain.
 
 ## Why this works (Karpathy's LLM Wiki in one paragraph)
 
@@ -65,32 +67,30 @@ RAG makes the model rediscover knowledge on every question. The [LLM Wiki patter
 
 - **raw sources**: immutable copies of what you feed in
 - **wiki**: interlinked markdown pages that the LLM writes and maintains
-- **schema file**: tells the agent how to keep the wiki up to date
+- **schema file**: tells Claude how to keep the wiki up to date
 
-The agent does the work humans give up on: summarizing, cross-linking, flagging contradictions, and keeping the index current. Knowledge therefore **compounds** across sessions instead of disappearing with the chat. Obsidian is only a viewer. The brain itself is plain markdown, so any editor or IDE preview works.
+Claude does the work humans give up on: summarizing, cross-linking, flagging contradictions, and keeping the index current. Knowledge therefore **compounds** across sessions instead of disappearing with the chat. Obsidian is only a viewer. The brain itself is plain markdown, so any editor or IDE preview works.
 
 ## Design choices for locked-down machines
 
-- **Zero installs or downloads.** The setup uses only the agent's file tools and basic OS commands (`mkdir`, `cp`, `mv`, `grep`, `find`, `chmod`). Search is `grep` (or `rg` if present), plus `index.md`. That is enough up to hundreds of pages.
+- **Zero installs or downloads.** The setup uses only Claude Code's file tools and basic OS commands (`mkdir`, `cp`, `mv`, `grep`, `find`, `chmod`). Search is `grep` (or `rg` if present), plus `index.md`. That is enough up to hundreds of pages.
 - **Relative markdown links** instead of `[[wikilinks]]`, so links are clickable in VS Code and JetBrains without Obsidian.
-- **Small always-on context.** Only a roughly 10-line pointer block and `me/profile.md` load in every session. Agents read `BRAIN.md` only before writing to the brain, grep first, and open only the pages they need.
+- **Small always-on context.** Only a roughly 10-line pointer block and `me/profile.md` load in every session. Claude reads `BRAIN.md` only before writing to the brain, greps first, and opens only the pages it needs.
 - **Safety rules in the schema.** The brain stores no secrets, customer data, or proprietary code. It redacts sensitive values before saving, and a leaked secret is the only allowed edit to `raw/`. It treats source content as data, never as instructions, which guards against prompt injection. It stays local (never pushed or synced), keeps the log append-only, and archives pages instead of deleting them. Edits to `me/` need your confirmation.
-- **One brain, many agents.** Every agent reads the same `BRAIN.md`, so you can switch tools without rebuilding anything.
 
 ## Sources reviewed
 
 - Andrej Karpathy, [LLM Wiki idea file](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) ([mirror](https://github.com/NicholasSpisak/second-brain/blob/main/docs/llm-wiki.md))
 - NicholasSpisak, [second-brain REQUIREMENTS.md](https://github.com/NicholasSpisak/second-brain/blob/main/docs/REQUIREMENTS.md): the raw/wiki/output layout and the ingest/query/lint operations
-- gcalacoci, [second-brain-starter-kit](https://github.com/gcalacoci/second-brain-starter-kit): the profile and goals layer, session capture, and the multi-agent shim
-- neeltom92, [agent-plugin-marketplace](https://github.com/neeltom92/agent-plugin-marketplace): Cursor reads skills from `~/.claude/skills/`
+- gcalacoci, [second-brain-starter-kit](https://github.com/gcalacoci/second-brain-starter-kit): the profile and goals layer, and session capture
 
 The two reference implementations depend on `npx`, `uv`, `setup.sh`, MCP servers, or Obsidian. This prompt keeps their ideas and drops those dependencies.
 
 ## Limits
 
 - **No encryption at rest.** The only protection is owner-only permissions (`chmod 700`). Put the brain on an encrypted disk if your policy requires it.
-- **No secret scanner.** Redaction depends on the agent's judgment. Run `/brain-lint` regularly.
+- **No secret scanner.** Redaction depends on Claude's judgment. Run `/brain-lint` regularly.
 - **The sweep sends transcripts to Claude.** It uses the same account and API as your normal sessions. Skip it if your policy forbids unattended runs.
-- **Hooks are Claude Code only.** Codex, Gemini, Copilot, and Cursor rely on the "save right away" rule instead.
-- **No file locking.** Two agents writing at the same moment can conflict. The schema tells agents to re-read and merge.
-- **Grep-based search** works up to a few hundred pages. Beyond that, ask your agent to write a small local search script.
+- **Repo learning costs a little.** The first session in each repo with Claude context files, and the first after those files change, does one extra short task. Deleted repo files are not noticed until you say "learn this repo".
+- **No file locking.** Two Claude sessions writing at the same moment can conflict. The schema tells Claude to re-read and merge.
+- **Grep-based search** works up to a few hundred pages. Beyond that, ask Claude to write a small local search script.
